@@ -2,13 +2,17 @@ import warnings
 warnings.filterwarnings("ignore")
 
 import json
+import random
 import google.generativeai as genai
 from pydantic import BaseModel, ValidationError, ConfigDict
 
 
-# ===============================
-# PYDANTIC SCHEMA
-# ===============================
+# =========================================================
+# 1️⃣ DATA VALIDATION MODEL (Pydantic)
+# ---------------------------------------------------------
+# Bu model stores.jsonl faylından oxunan datanı yoxlayır.
+# Əgər JSON daxilində səhv field olsa proqram crash etməsin.
+# =========================================================
 class ProductData(BaseModel):
     model_config = ConfigDict(extra='forbid')
 
@@ -19,19 +23,23 @@ class ProductData(BaseModel):
     rating: float
 
 
-# ===============================
-# GEMINI API (shared with app.py)
-# ===============================
-API_KEY = "AIzaSyDk0_36oVduqbK9mOz_9_7Zy_sSjDH1P7Y"
+# =========================================================
+# 2️⃣ GEMINI AI CONFIGURATION
+# ---------------------------------------------------------
+# Gemini AI API burada qoşulur və AI marketing text yaradır.
+# =========================================================
+API_KEY = "AIzaSyBtj6xHDIYm4Jm1_SDMj5Fp5RdRgQREZoQ"
 
 genai.configure(api_key=API_KEY)
 
 model = genai.GenerativeModel("gemini-2.5-pro")
 
 
-# ===============================
-# DISCOUNT FUNKSIYASI
-# ===============================
+# =========================================================
+# 3️⃣ DISCOUNT CALCULATION
+# ---------------------------------------------------------
+# Məhsulun endirim faizini hesablayır.
+# =========================================================
 def calculate_discount(old_price, new_price):
 
     discount = ((old_price - new_price) / old_price) * 100
@@ -39,28 +47,13 @@ def calculate_discount(old_price, new_price):
     return discount
 
 
-# ===============================
-# AI MARKETING SLOGAN GENERATOR
-# ===============================
+# =========================================================
+# 4️⃣ AI MARKETING SLOGAN
+# ---------------------------------------------------------
+# AI istifadə edərək məhsul üçün marketing slogan yaradır.
+# Bu web app-də banner kimi istifadə olunur.
+# =========================================================
 def generate_marketing_slogan(product, discount):
-
-    """
-    Advanced Scope (UI Requirement)
-
-    This function uses Gemini AI to generate a short marketing slogan
-    for discounted products.
-
-    The slogan will be displayed in the Streamlit web interface
-    as a promotional banner above product cards.
-
-    UI Concept:
-    - Old price shown with strikethrough
-    - New discounted price highlighted
-    - AI-generated marketing slogan displayed at the top
-
-    Example Output:
-    "🔥 Limited Time Deal! Get the iPhone 13 now with an incredible 40% discount!"
-    """
 
     prompt = f"""
     Write a short exciting marketing slogan for an e-commerce promotion.
@@ -73,19 +66,19 @@ def generate_marketing_slogan(product, discount):
     """
 
     try:
-
         response = model.generate_content(prompt)
-
         return response.text
 
     except Exception:
-
         return f"🔥 Special Offer! {product} now available with {discount}% discount!"
 
 
-# ===============================
-# DATA LOADER
-# ===============================
+# =========================================================
+# 5️⃣ STORE DATA LOADER
+# ---------------------------------------------------------
+# JSONL faylından bütün mağaza datalarını oxuyur
+# və Python dictionary formatına çevirir.
+# =========================================================
 def load_store_data():
 
     stores_data = {}
@@ -102,13 +95,10 @@ def load_store_data():
             item = json.loads(line)
 
             try:
-
                 validated = ProductData(**item)
 
             except ValidationError as e:
-
                 print("❌ DATA ERROR:", e)
-
                 continue
 
             store = validated.store
@@ -126,9 +116,11 @@ def load_store_data():
     return stores_data
 
 
-# ===============================
-# ƏN UCUZ MAĞAZANI TAP
-# ===============================
+# =========================================================
+# 6️⃣ FIND CHEAPEST STORE
+# ---------------------------------------------------------
+# Müəyyən məhsul üçün ən ucuz mağazanı tapır.
+# =========================================================
 def find_best_deal(product, stores_data):
 
     cheapest_store = None
@@ -141,7 +133,6 @@ def find_best_deal(product, stores_data):
         if product in products:
 
             data = products[product]
-
             price = data["new_price"]
 
             if price < cheapest_price:
@@ -154,9 +145,14 @@ def find_best_deal(product, stores_data):
     return cheapest_store, cheapest_old_price, cheapest_price, rating
 
 
-# ===============================
-# SUPER DEAL CHECK
-# ===============================
+# =========================================================
+# 7️⃣ SUPER DEAL DETECTION
+# ---------------------------------------------------------
+# Əgər:
+# discount >= 40%
+# rating > 4
+# olarsa "SUPER DEAL" hesab olunur və AI reklam yazısı yaradır.
+# =========================================================
 def check_super_deal(product, store, old_price, new_price, rating):
 
     discount = calculate_discount(old_price, new_price)
@@ -177,7 +173,6 @@ def check_super_deal(product, store, old_price, new_price, rating):
 
             ai_text = response.text
 
-            # 👇 AI TEXT TERMINALDA GÖRÜNSÜN
             print("\n🤖 AI GENERATED MARKETING TEXT:")
             print(ai_text)
             print()
@@ -201,9 +196,94 @@ def check_super_deal(product, store, old_price, new_price, rating):
     return None
 
 
-# ===============================
-# MAIN (terminal usage)
-# ===============================
+# =========================================================
+# 8️⃣ PRICE HISTORY GENERATOR
+# ---------------------------------------------------------
+# Demo məqsədilə məhsulun son 6 aylıq qiymət tarixçəsini
+# random şəkildə simulyasiya edir.
+# =========================================================
+def generate_price_history(product, current_price):
+
+    history = []
+
+    base_price = current_price * random.uniform(1.1, 1.4)
+
+    for month in ["Jan","Feb","Mar","Apr","May","Jun"]:
+
+        price = round(base_price - random.uniform(0, base_price * 0.2),2)
+
+        history.append({
+            "month": month,
+            "price": price
+        })
+
+        base_price = price
+
+    history.append({
+        "month": "Now",
+        "price": current_price
+    })
+
+    return history
+
+
+# =========================================================
+# 9️⃣ AI DEAL SCORE
+# ---------------------------------------------------------
+# Məhsulun nə qədər yaxşı deal olduğunu qiymətləndirir.
+# Formula:
+# discount score + rating score
+# maksimum 100.
+# =========================================================
+def calculate_ai_deal_score(old_price, new_price, rating):
+
+    discount = calculate_discount(old_price, new_price)
+
+    discount_score = min(discount * 1.5, 70)
+
+    rating_score = (rating / 5) * 30
+
+    score = round(discount_score + rating_score)
+
+    return min(score, 100)
+
+
+# =========================================================
+# 🔟 PRODUCT COMPARISON
+# ---------------------------------------------------------
+# Bir neçə məhsulu müqayisə etmək üçün istifadə olunur.
+# =========================================================
+def compare_products(product_list, stores_data):
+
+    comparison = []
+
+    for product in product_list:
+
+        store, old_price, new_price, rating = find_best_deal(product, stores_data)
+
+        if store is None:
+            continue
+
+        discount = calculate_discount(old_price, new_price)
+
+        comparison.append({
+            "product": product,
+            "store": store,
+            "old_price": old_price,
+            "new_price": new_price,
+            "discount": round(discount,2),
+            "rating": rating
+        })
+
+    return comparison
+
+
+# =========================================================
+#  MAIN PROGRAM (Terminal Version)
+# ---------------------------------------------------------
+# Bu hissə terminaldan işlədilən versiyadır.
+# Web app ilə eyni logic istifadə olunur.
+# =========================================================
 if __name__ == "__main__":
 
     stores_data = load_store_data()
@@ -217,25 +297,23 @@ if __name__ == "__main__":
     print("\nAlış siyahısı:", shopping_list)
 
     total_price = 0
-
     best_plan = {}
-
     super_deals = []
 
+    # =====================================================
+    # DEAL ANALYSIS
+    # =====================================================
     for product in shopping_list:
 
         store, old_price, new_price, rating = find_best_deal(product, stores_data)
 
         if store is None:
-
             print(product, "tapılmadı")
-
             continue
 
         total_price += new_price
 
         if store not in best_plan:
-
             best_plan[store] = []
 
         best_plan[store].append((product, new_price))
@@ -243,9 +321,12 @@ if __name__ == "__main__":
         deal = check_super_deal(product, store, old_price, new_price, rating)
 
         if deal:
-
             super_deals.append(deal)
 
+
+    # =====================================================
+    # BEST SHOPPING PLAN
+    # =====================================================
     print("\n🛒 ƏN SƏRFƏLİ ALIŞ PLANI\n")
 
     for store, items in best_plan.items():
@@ -253,15 +334,72 @@ if __name__ == "__main__":
         print(store)
 
         for name, price in items:
-
             print(" ", name, "-", price, "AZN")
 
         print()
 
     print("Ümumi məbləğ:", round(total_price,2), "AZN")
 
-    with open("data/best_deals.json", "w", encoding="utf-8") as f:
 
+    # =====================================================
+    # AI DEAL SCORES
+    # =====================================================
+    print("\n🤖 AI DEAL SCORES\n")
+
+    for product in shopping_list:
+
+        store, old_price, new_price, rating = find_best_deal(product, stores_data)
+
+        if store:
+
+            score = calculate_ai_deal_score(old_price, new_price, rating)
+
+            print(f"{product} → AI Deal Score: {score}/100")
+
+
+    # =====================================================
+    # PRICE HISTORY
+    # =====================================================
+    print("\n📉 PRICE HISTORY\n")
+
+    for product in shopping_list:
+
+        store, old_price, new_price, rating = find_best_deal(product, stores_data)
+
+        if store:
+
+            history = generate_price_history(product, new_price)
+
+            print(product)
+
+            for point in history:
+
+                print(f"  {point['month']} → {point['price']} AZN")
+
+            print()
+
+
+    # =====================================================
+    # PRODUCT COMPARISON
+    # =====================================================
+    print("\n⚖️ PRODUCT COMPARISON\n")
+
+    comparison = compare_products(shopping_list, stores_data)
+
+    for item in comparison:
+
+        print(
+            f"{item['product']} | Store: {item['store']} | "
+            f"Price: {item['new_price']} AZN | "
+            f"Discount: {item['discount']}% | "
+            f"Rating: {item['rating']}"
+        )
+
+
+    # =====================================================
+    # SAVE SUPER DEALS
+    # =====================================================
+    with open("data/best_deals.json", "w", encoding="utf-8") as f:
         json.dump(super_deals, f, indent=4, ensure_ascii=False)
 
     print("\nSuper deals data/best_deals.json faylına yazıldı")

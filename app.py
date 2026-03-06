@@ -19,12 +19,16 @@ try:
         check_super_deal,
         generate_marketing_slogan,
         model as gemini_model,
+        generate_price_history,
+        calculate_ai_deal_score,
+        compare_products
     )
     _backend = True
 except Exception:
     _backend = False
     gemini_model = None
     load_store_data = find_best_deal = check_super_deal = generate_marketing_slogan = None
+    generate_price_history = calculate_ai_deal_score = compare_products = None
 
 # =============================================================================
 # CONFIG & CONSTANTS
@@ -55,7 +59,14 @@ PRODUCT_IMAGES = {
     "ipad_air": "images/ipad_air.jpg",
 
     "playstation5": "images/playstation_5.jpg",
-    "xbox_series_x": "images/xbox_series_x.png"
+    "xbox_series_x": "images/xbox_series_x.png",
+
+    "samsung_tv_55": "images/samsung_tv_55.jpg",
+    "lg_tv_55": "images/lg_tv_55.jpg",
+    "ssd_1tb": "images/ssd_1tb.jpg",
+    "external_hdd": "images/external_hdd.jpg",
+
+
 }
 
 CATEGORY_KEYS = ["📱 Smartphones", "💻 Laptops", "🎮 Gaming", "🎧 Audio", "📟 Tablets"]
@@ -182,6 +193,51 @@ def stock_indicator(product_id):
     """Deterministic 'stock left' number for UI (3-8) based on product id."""
     n = int(hashlib.md5(product_id.encode()).hexdigest()[:4], 16) % 6 + 3
     return n
+
+
+def get_ai_deal_score_display(old_price, new_price, rating):
+    """
+    Return (score_int, color_hex) for AI Deal Score when backend available.
+    score >= 90 → green, >= 75 → orange, else gray. Returns (None, None) if backend unavailable.
+    """
+    if not _backend or calculate_ai_deal_score is None:
+        return None, None
+    try:
+        score = calculate_ai_deal_score(old_price, new_price, rating)
+        if score >= 90:
+            color = "#16a34a"
+        elif score >= 75:
+            color = "#ea580c"
+        else:
+            color = "#6b7280"
+        return score, color
+    except Exception:
+        return None, None
+
+
+def build_price_history_chart(product_id, new_price, product_name=""):
+    """
+    Build a Plotly line chart for price history. Returns the figure or None if backend unavailable.
+    Title: 📉 Price History, X: Month, Y: Price (AZN), markers + line, color #E30613.
+    """
+    if not _backend or generate_price_history is None:
+        return None
+    try:
+        history = generate_price_history(product_id, new_price)
+        if not history:
+            return None
+        df = pd.DataFrame(history)
+        fig = px.line(df, x="month", y="price", markers=True, title="📉 Price History")
+        fig.update_layout(
+            xaxis_title="Month",
+            yaxis_title="Price (AZN)",
+            margin=dict(t=40, b=40),
+            showlegend=False,
+        )
+        fig.update_traces(line_color=PRIMARY_COLOR, marker=dict(size=10, color=PRIMARY_COLOR))
+        return fig
+    except Exception:
+        return None
 
 
 def _fallback_recommendation(product, store, old_price, new_price, discount_pct, savings):
@@ -725,6 +781,11 @@ with main_col:
                 f'<tr><td>{get_store_badge(s)}</td><td>{p} AZN</td></tr>'
                 for s, p, _ in opt["all_offers"]
             )
+            # AI Deal Score (when backend available)
+            ai_score, ai_score_color = get_ai_deal_score_display(opt["old_price"], opt["new_price"], opt["rating"])
+            ai_score_html = ""
+            if ai_score is not None and ai_score_color:
+                ai_score_html = f'<p class="ai-deal-score" style="font-size:12px;font-weight:600;margin:6px 0 8px 0;color:{ai_score_color} !important;">🔥 AI Deal Score: {ai_score} / 100</p>'
             # Full card wrapper (image + body) for red border when highlighted
             st.markdown(f'<div class="{wrapper_class}">', unsafe_allow_html=True)
             # Product image at top (scale to column width; fallback handled by dict + PLACEHOLDER_IMG)
@@ -739,6 +800,7 @@ with main_col:
                 <div class="card-body">
                     <h4 class="card-title">{opt["name"]}</h4>
                     <p class="stars">{stars} {opt["rating"]}</p>
+                    {ai_score_html}
                     <p class="old-price">{opt["old_price"]} AZN</p>
                     <p class="new-price">{opt["new_price"]} AZN</p>
                     <span class="store-badge">{store_label}</span>
@@ -840,30 +902,32 @@ if calculate and selected_list:
     st.markdown("---")
     st.markdown("## 📊 Your Best Deals")
 
-    # Promotional banner: "🔥 AI DEAL OF THE DAY" with Gemini slogan when any Super Deal exists
+    # Promotional banner: Deal of the Day with Gemini slogan when any Super Deal exists
     if super_deal_results and _backend and generate_marketing_slogan is not None:
         try:
             best_super = super_deal_results[0]
             slogan = generate_marketing_slogan(best_super["name"], best_super["discount"])
             if slogan:
+                clean_slogan = slogan.strip().replace('"', '')
                 st.markdown(f"""
                 <div class="banner-deal-of-day">
-                    <div class="banner-title">🔥 AI DEAL OF THE DAY</div>
-                    <div class="banner-slogan">"{html.escape(slogan.strip().strip('"'))}"</div>
+                    <div class="banner-title">🔥 DEAL OF THE DAY</div>
+                    <div class="banner-slogan">{html.escape(clean_slogan)}</div>
                 </div>
                 """, unsafe_allow_html=True)
         except Exception:
             pass
     elif super_deal_results:
         best_super = super_deal_results[0]
+        fallback_slogan = f"Limited Time Offer! {best_super['name']} now {int(best_super['discount'])}% OFF!"
         st.markdown(f"""
         <div class="banner-deal-of-day">
-            <div class="banner-title">🔥 AI DEAL OF THE DAY</div>
-            <div class="banner-slogan">"Limited Time Offer! {html.escape(best_super["name"])} now {int(best_super["discount"])}% OFF!"</div>
+            <div class="banner-title">🔥 DEAL OF THE DAY</div>
+            <div class="banner-slogan">{html.escape(fallback_slogan)}</div>
         </div>
         """, unsafe_allow_html=True)
 
-    # Product cards in 3-column grid: name, store, old (strikethrough), new (red), discount badge
+    # Product cards in 3-column grid + Price History chart under each card
     st.markdown("#### Product cards")
     card_cols = st.columns(3)
     for i, item in enumerate(results):
@@ -880,6 +944,10 @@ if calculate and selected_list:
                 {ai_line}
             </div>
             """, unsafe_allow_html=True)
+            # Price History chart under each product card
+            price_history_fig = build_price_history_chart(item["product"], item["new_price"], item["name"])
+            if price_history_fig is not None:
+                st.plotly_chart(price_history_fig, use_container_width=True)
 
     # Metrics row
     m1, m2, m3 = st.columns(3)
@@ -938,6 +1006,28 @@ if calculate and selected_list:
 
     # Total Basket Price at bottom (st.metric)
     st.metric("Total Basket Price", f"{total_price:.2f} AZN")
+
+    # Product Comparison table (backend: compare_products)
+    if _backend and compare_products is not None:
+        try:
+            comparison = compare_products(selected_list, stores_data)
+            if comparison:
+                st.markdown("---")
+                st.markdown("## 🔎 Product Comparison")
+                df_comp = pd.DataFrame([
+                    {
+                        "Product": PRODUCT_DISPLAY_NAMES.get(row["product"], row["product"]),
+                        "Best Store": get_store_badge(row["store"]),
+                        "Old Price": row["old_price"],
+                        "New Price": row["new_price"],
+                        "Discount %": row["discount"],
+                        "Rating": row["rating"],
+                    }
+                    for row in comparison
+                ])
+                st.dataframe(df_comp, use_container_width=True, hide_index=True)
+        except Exception:
+            pass
 
 elif calculate and not selected_list:
     st.warning("Please add at least one product to the basket, then click **Calculate Best Deals**.")
