@@ -314,8 +314,25 @@ def inject_css():
     }
     .product-card:hover { border-color: #E30613; box-shadow: 0 8px 24px rgba(227,6,19,0.12); transform: translateY(-2px); }
     .product-card.selected { border: 2px solid #E30613; background: #fffbfb !important; }
-    .product-card .card-img { width: 100%; height: 180px; object-fit: cover; background: #F5F5F5; }
+    .product-card .card-img { width: 100%; height: 220px; object-fit: contain; background: #FFFFFF !important; }
     .product-card-image-wrap { border-radius: 14px 14px 0 0; overflow: hidden; border: 1px solid #e0e0e0; border-bottom: none; }
+    /* Product image container: fixed height, centered, aspect ratio preserved (Streamlit DOM) */
+    div[data-testid="stImage"] {
+        height: 220px !important;
+        background: #FFFFFF !important;
+        display: flex !important;
+        align-items: center !important;
+        justify-content: center !important;
+        padding: 20px;
+        border-radius: 14px 14px 0 0;
+        overflow: hidden;
+    }
+    div[data-testid="stImage"] img {
+        max-height: 180px !important;
+        max-width: 100% !important;
+        width: auto !important;
+        object-fit: contain !important;
+    }
     .product-card-body-wrap { border: 1px solid #e0e0e0; border-top: none; border-radius: 0 0 14px 14px; padding: 0; background: #FFFFFF !important; margin-top: 0; position: relative; }
     .product-card .discount-badge {
         position: absolute; top: 10px; right: 10px; background: #E30613; color: #FFFFFF !important;
@@ -712,9 +729,9 @@ with main_col:
             st.markdown(f'<div class="{wrapper_class}">', unsafe_allow_html=True)
             # Product image at top (scale to column width; fallback handled by dict + PLACEHOLDER_IMG)
             try:
-                st.image(img_url, use_container_width=True)
+                st.image(img_url)
             except Exception:
-                st.image(PLACEHOLDER_IMG, use_container_width=True)
+                st.image(PLACEHOLDER_IMG)
             # Card body: discount badge, name, prices, store, stock, table
             st.markdown(f"""
             <div class="{card_class} product-card-body-wrap">
