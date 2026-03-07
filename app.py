@@ -495,6 +495,11 @@ stores_data, all_store_names = get_stores_data()
 inject_css()
 
 
+def _render_html(html):
+    """Render HTML so it is interpreted by Streamlit (required for deployment and category switching)."""
+    st.markdown(html, unsafe_allow_html=True)
+
+
 def get_category_for_product(product_id):
     """Return the category key that contains this product (for switching sidebar when Super Deal is clicked)."""
     for cat_key, pid_list in CATEGORIES.items():
@@ -601,7 +606,7 @@ def render_header(basket_count):
     nav_html = "".join(
         f'<span class="{"active" if c == active else ""}">{c}</span>' for c in CATEGORY_KEYS
     )
-    st.markdown(f"""
+    header_html = f"""
     <div class="header-bar">
         <div class="header-logo">🛒 AI Deal Hunter</div>
         <nav class="header-nav">{nav_html}</nav>
@@ -609,7 +614,8 @@ def render_header(basket_count):
             <span class="basket-counter">🛒 {basket_count}</span>
         </div>
     </div>
-    """, unsafe_allow_html=True)
+    """
+    _render_html(header_html)
     # Nav buttons (sync category with sidebar)
     cols = st.columns(5)
     for idx, cat in enumerate(CATEGORY_KEYS):
@@ -788,7 +794,7 @@ with main_col:
             if ai_score is not None and ai_score_color:
                 ai_score_html = f'<p class="ai-deal-score" style="font-size:12px;font-weight:600;margin:6px 0 8px 0;color:{ai_score_color} !important;">🔥 AI Deal Score: {ai_score} / 100</p>'
             # Full card wrapper (image + body) for red border when highlighted
-            st.markdown(f'<div class="{wrapper_class}">', unsafe_allow_html=True)
+            _render_html(f'<div class="{wrapper_class}">')
             # Product image at top (scale to column width; fallback handled by dict + PLACEHOLDER_IMG)
             try:
                 st.image(img_url)
@@ -811,7 +817,7 @@ with main_col:
             </div>
             </div>
             """
-            st.markdown(product_card_html, unsafe_allow_html=True)
+            _render_html(product_card_html)
             if in_basket:
                 if st.button("Remove from Basket", key=f"b_{opt['id']}", use_container_width=True):
                     st.session_state.selected_products.discard(opt["id"])
@@ -826,7 +832,7 @@ with main_col:
 
 # Right panel: Super Deals (always visible; discount >= 40% and rating > 4)
 with right_col:
-    st.markdown("<div class='super-deals-wrap'><h3>🔥 Super Deals</h3>", unsafe_allow_html=True)
+    _render_html("<div class='super-deals-wrap'><h3>🔥 Super Deals</h3>")
     # Each Super Deal: card HTML + clickable View button directly below (card is clickable via button)
     for d in _super_deals_list:
         ai = generate_ai_recommendation(
@@ -842,12 +848,12 @@ with right_col:
             <div class="ai-insight-label">AI Insight</div>
             <div class="ai-insight-box">{html.escape(ai_full)}</div>
         </div>"""
-        st.markdown(card_html, unsafe_allow_html=True)
+        _render_html(card_html)
         if st.button("View → " + (d["name"][:24] + "…" if len(d["name"]) > 24 else d["name"]), key=f"super_{d['product']}_{d['store']}", use_container_width=True):
             st.session_state.highlight_product_id = d["product"]
             st.session_state.current_category = get_category_for_product(d["product"])
             st.rerun()
-    st.markdown("</div>", unsafe_allow_html=True)
+    _render_html("</div>")
 
     # Trending deals (from same global list)
     st.markdown("### 📈 Trending deals")
@@ -911,23 +917,25 @@ if calculate and selected_list:
             slogan = generate_marketing_slogan(best_super["name"], best_super["discount"])
             if slogan:
                 clean_slogan = slogan.strip().replace('"', '')
-                st.markdown(f"""
+                banner_html = f"""
                 <div class="banner-deal-of-day">
                     <div class="banner-title">🔥 DEAL OF THE DAY</div>
                     <div class="banner-slogan">{html.escape(clean_slogan)}</div>
                 </div>
-                """, unsafe_allow_html=True)
+                """
+                _render_html(banner_html)
         except Exception:
             pass
     elif super_deal_results:
         best_super = super_deal_results[0]
         fallback_slogan = f"Limited Time Offer! {best_super['name']} now {int(best_super['discount'])}% OFF!"
-        st.markdown(f"""
+        banner_html = f"""
         <div class="banner-deal-of-day">
             <div class="banner-title">🔥 DEAL OF THE DAY</div>
             <div class="banner-slogan">{html.escape(fallback_slogan)}</div>
         </div>
-        """, unsafe_allow_html=True)
+        """
+        _render_html(banner_html)
 
     # Product cards in 3-column grid + Price History chart under each card
     st.markdown("#### Product cards")
@@ -946,7 +954,7 @@ if calculate and selected_list:
                 {ai_line}
             </div>
             """
-            st.markdown(result_card_html, unsafe_allow_html=True)
+            _render_html(result_card_html)
             # Price History chart under each product card
             price_history_fig = build_price_history_chart(item["product"], item["new_price"], item["name"])
             if price_history_fig is not None:
@@ -1000,12 +1008,13 @@ if calculate and selected_list:
             item.get("rating", 4.5),
         )
         ai_insight_clean = _strip_markdown_for_display(ai_insight)
-        st.markdown(f"""
+        insight_html = f"""
         <div class="insight-card">
             <strong>{html.escape(item["name"])}</strong> — Best at {html.escape(store_label)} • <strong>{item["discount"]}% off</strong><br>
             {html.escape(ai_insight_clean)}
         </div>
-        """, unsafe_allow_html=True)
+        """
+        _render_html(insight_html)
 
     # Total Basket Price at bottom (st.metric)
     st.metric("Total Basket Price", f"{total_price:.2f} AZN")
