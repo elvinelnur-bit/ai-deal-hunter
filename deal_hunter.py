@@ -1,3 +1,4 @@
+import os
 import warnings
 warnings.filterwarnings("ignore")
 
@@ -26,13 +27,31 @@ class ProductData(BaseModel):
 # =========================================================
 # 2️⃣ GEMINI AI CONFIGURATION
 # ---------------------------------------------------------
-# Gemini AI API burada qoşulur və AI marketing text yaradır.
+# Set GEMINI_API_KEY in environment or .env (e.g. python-dotenv).
 # =========================================================
-API_KEY = "AIzaSyBtj6xHDIYm4Jm1_SDMj5Fp5RdRgQREZoQ"
+API_KEY = os.getenv("GEMINI_API_KEY")
 
-genai.configure(api_key=API_KEY)
+if API_KEY:
+    genai.configure(api_key=API_KEY)
+    model = genai.GenerativeModel("gemini-2.5-pro")
+else:
+    model = None
 
-model = genai.GenerativeModel("gemini-2.5-pro")
+
+def _safe_generate(prompt):
+    """
+    Call Gemini and return stripped text, or None if missing/failed.
+    Prevents fallback templates when AI response exists but is malformed.
+    """
+    if model is None:
+        return None
+    try:
+        response = model.generate_content(prompt)
+        if response and hasattr(response, "text") and response.text:
+            return response.text.strip()
+    except Exception:
+        pass
+    return None
 
 
 # =========================================================
@@ -52,9 +71,9 @@ def calculate_discount(old_price, new_price):
 # ---------------------------------------------------------
 # AI istifadə edərək məhsul üçün marketing slogan yaradır.
 # Bu web app-də banner kimi istifadə olunur.
+# Never returns empty: uses dynamic fallback if AI fails.
 # =========================================================
 def generate_marketing_slogan(product, discount):
-
     prompt = f"""
     Write a short exciting marketing slogan for an e-commerce promotion.
 
@@ -64,13 +83,10 @@ def generate_marketing_slogan(product, discount):
     The text must be suitable for a shopping website banner.
     Maximum one sentence.
     """
-
-    try:
-        response = model.generate_content(prompt)
-        return response.text
-
-    except Exception:
-        return f"🔥 Special Offer! {product} now available with {discount}% discount!"
+    text = _safe_generate(prompt)
+    if text:
+        return text
+    return f"🔥 {product} now available with {round(discount, 1)}% discount!"
 
 
 # =========================================================
@@ -152,48 +168,59 @@ def find_best_deal(product, stores_data):
 # discount >= 40%
 # rating > 4
 # olarsa "SUPER DEAL" hesab olunur və AI reklam yazısı yaradır.
+# On AI failure, ai_marketing_text is None; UI handles fallback.
 # =========================================================
 def check_super_deal(product, store, old_price, new_price, rating):
-
     discount = calculate_discount(old_price, new_price)
 
     if discount >= 40 and rating > 4:
-
         print(f"🔥 SUPER DEAL TAPILDI → {product}")
 
         prompt = f"""
         Write a short catchy Instagram advertisement text
         for the product {product}.
-        The product has a {round(discount,2)}% discount.
+        The product has a {round(discount, 2)}% discount.
         """
-
-        try:
-
-            response = model.generate_content(prompt)
-
-            ai_text = response.text
-
+        ai_text = _safe_generate(prompt)
+        if ai_text:
             print("\n🤖 AI GENERATED MARKETING TEXT:")
             print(ai_text)
             print()
-
-        except Exception as e:
-
-            print("⚠️ AI API işləmədi:", e)
-
-            ai_text = "Limited-time deal! Grab this product now before the discount ends!"
+        else:
+            print("⚠️ AI API işləmədi – fallback UI-da göstəriləcək")
 
         return {
             "product": product,
             "store": store,
             "old_price": old_price,
             "new_price": new_price,
-            "discount": round(discount,2),
+            "discount": round(discount, 2),
             "rating": rating,
-            "ai_marketing_text": ai_text
+            "ai_marketing_text": ai_text,
         }
 
     return None
+
+
+# =========================================================
+# 7b️⃣ AI DEAL INSIGHT (for Streamlit UI)
+# ---------------------------------------------------------
+# Short explanation why the product is a good deal.
+# Returns None on failure; UI layer handles fallback.
+# =========================================================
+def generate_ai_insight(product, discount, rating):
+    prompt = f"""
+    You are an e-commerce analyst.
+
+    Explain in 2 short sentences why this product is a good deal.
+
+    Product: {product}
+    Discount: {discount}%
+    Rating: {rating}
+
+    Focus on value and savings.
+    """
+    return _safe_generate(prompt)
 
 
 # =========================================================
