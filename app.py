@@ -289,6 +289,7 @@ Explain the value of this deal in 2-3 sentences."""
 # CSS – PROFESSIONAL E-COMMERCE STYLING (high contrast, white marketplace)
 # =============================================================================
 def inject_css():
+    # HTML/CSS must be rendered with unsafe_allow_html=True or it appears as raw text (critical for deployment)
     st.markdown("""
     <style>
     @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
@@ -793,8 +794,8 @@ with main_col:
                 st.image(img_url)
             except Exception:
                 st.image(PLACEHOLDER_IMG)
-            # Card body: discount badge, name, prices, store, stock, table
-            st.markdown(f"""
+            # Card body: discount badge, name, prices, store, stock, table (must use unsafe_allow_html for HTML to render)
+            product_card_html = f"""
             <div class="{card_class} product-card-body-wrap">
                 <div class="discount-badge">-{int(opt["discount"])}%</div>
                 <div class="card-body">
@@ -809,7 +810,8 @@ with main_col:
                 </div>
             </div>
             </div>
-            """, unsafe_allow_html=True)
+            """
+            st.markdown(product_card_html, unsafe_allow_html=True)
             if in_basket:
                 if st.button("Remove from Basket", key=f"b_{opt['id']}", use_container_width=True):
                     st.session_state.selected_products.discard(opt["id"])
@@ -934,7 +936,7 @@ if calculate and selected_list:
         with card_cols[i % 3]:
             store_label = get_store_badge(item["store"])
             ai_line = f'<p style="font-size:12px;color:#333;margin-top:8px;">{html.escape(item["ai_marketing_text"] or "")}</p>' if item.get("ai_marketing_text") else ""
-            st.markdown(f"""
+            result_card_html = f"""
             <div class="result-product-card">
                 <span class="discount-badge">-{item["discount"]}%</span>
                 <h4 style="margin:0 0 8px 0;color:#111;">{html.escape(item["name"])}</h4>
@@ -943,7 +945,8 @@ if calculate and selected_list:
                 <p class="new" style="margin:4px 0 0 0;">{item["new_price"]} AZN</p>
                 {ai_line}
             </div>
-            """, unsafe_allow_html=True)
+            """
+            st.markdown(result_card_html, unsafe_allow_html=True)
             # Price History chart under each product card
             price_history_fig = build_price_history_chart(item["product"], item["new_price"], item["name"])
             if price_history_fig is not None:
