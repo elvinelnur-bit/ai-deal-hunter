@@ -7,9 +7,13 @@ import html
 import hashlib
 import re
 
+import matplotlib.pyplot as plt
+import numpy as np
 import pandas as pd
 import plotly.express as px
+import plotly.graph_objects as go
 import streamlit as st
+from sklearn.linear_model import LinearRegression
 
 # Backend: use deal_hunter when available (same data structure, find_best_deal, check_super_deal, generate_marketing_slogan)
 try:
@@ -18,16 +22,19 @@ try:
         find_best_deal,
         check_super_deal,
         generate_marketing_slogan,
+        generate_ai_insight,
+        generate_price_analysis,
+        calculate_discount,
         model as gemini_model,
         generate_price_history,
         calculate_ai_deal_score,
-        compare_products
+        compare_products,
     )
     _backend = True
 except Exception:
     _backend = False
     gemini_model = None
-    load_store_data = find_best_deal = check_super_deal = generate_marketing_slogan = None
+    load_store_data = find_best_deal = check_super_deal = generate_marketing_slogan = generate_ai_insight = generate_price_analysis = calculate_discount = None
     generate_price_history = calculate_ai_deal_score = compare_products = None
 
 # =============================================================================
@@ -215,6 +222,18 @@ def get_ai_deal_score_display(old_price, new_price, rating):
         return None, None
 
 
+def _predict_next_price(history):
+    """Predict next period price from history using LinearRegression."""
+    if not history or len(history) < 2:
+        return (history[-1]["price"] if history else 0)
+    months = np.arange(len(history)).reshape(-1, 1)
+    prices = np.array([h["price"] for h in history])
+    model = LinearRegression()
+    model.fit(months, prices)
+    next_month = np.array([[len(history)]])
+    return float(model.predict(next_month)[0])
+
+
 def build_price_history_chart(product_id, new_price, product_name=""):
     """
     Build a Plotly line chart for price history. Returns the figure or None if backend unavailable.
@@ -236,6 +255,66 @@ def build_price_history_chart(product_id, new_price, product_name=""):
         )
         fig.update_traces(line_color=PRIMARY_COLOR, marker=dict(size=10, color=PRIMARY_COLOR))
         return fig
+    except Exception:
+        return None
+
+
+def build_price_history_chart_with_prediction(history, predicted_price, title=None):
+    """
+    Plotly chart: red line = historical + current, blue dashed = predicted next price.
+    No figure title (use st.markdown above); margin_top avoids overlap.
+    """
+    if not history:
+        return None
+    months = [h["month"] for h in history]
+    prices = [h["price"] for h in history]
+    fig = go.Figure()
+    fig.add_trace(go.Scatter(
+        x=months, y=prices, mode="lines+markers", name="History",
+        line=dict(color=PRIMARY_COLOR, width=2), marker=dict(size=10),
+    ))
+    last_m = months[-1] if months else "Now"
+    fig.add_trace(go.Scatter(
+        x=[last_m, "Predicted"], y=[prices[-1] if prices else 0, predicted_price],
+        mode="lines+markers", name="Predicted",
+        line=dict(color="#1f77b4", width=2, dash="dash"), marker=dict(size=10),
+    ))
+    fig.update_layout(
+        xaxis_title="Month",
+        yaxis_title="Price (AZN)",
+        margin=dict(t=20, b=40, l=50, r=20),
+        showlegend=True,
+        legend=dict(orientation="h", yanchor="bottom", y=1.02),
+    )
+    return fig
+
+
+@st.cache_data(ttl=3600)
+def cached_price_history(product, price):
+    """Cache price history to avoid repeated backend calls."""
+    if generate_price_history is None:
+        return []
+    try:
+        return generate_price_history(product, price) or []
+    except Exception:
+        return []
+
+
+def _history_cache_key(history):
+    """Hashable key for history list (for caching)."""
+    return tuple((h.get("month"), h.get("price")) for h in (history or []))
+
+
+@st.cache_data(ttl=3600)
+def cached_price_analysis(product, current_price, predicted_price, discount, rating, history_key):
+    """Cache AI price analysis; history_key = _history_cache_key(history)."""
+    if generate_price_analysis is None:
+        return None
+    try:
+        history = [{"month": m, "price": p} for m, p in history_key]
+        return generate_price_analysis(
+            product, current_price, predicted_price, discount, rating, history
+        )
     except Exception:
         return None
 
@@ -459,6 +538,18 @@ def inject_css():
     .result-product-card .old { text-decoration: line-through; color: #555555 !important; font-size: 14px; }
     .result-product-card .new { color: #E30613 !important; font-size: 20px; font-weight: 700; }
     .result-product-card .discount-badge { background: #E30613; color: white; padding: 4px 10px; border-radius: 6px; font-size: 12px; font-weight: 700; display: inline-block; margin-bottom: 8px; }
+
+    /* === AI Price Analysis recommendation box === */
+    .ai-recommendation-box {
+        background: #f0f9ff !important;
+        border-left: 4px solid #E30613;
+        padding: 14px;
+        border-radius: 8px;
+        font-size: 14px;
+        color: #111111 !important;
+        margin-top: 12px;
+    }
+    .ai-recommendation-box .ai-rec-title { font-weight: 700; margin-bottom: 8px; color: #111111 !important; }
 
     /* === Deal insights & metrics === */
     .insight-card { background: #F5F5F5 !important; border-left: 4px solid #E30613; padding: 14px 16px; border-radius: 0 10px 10px 0; margin: 12px 0; font-size: 14px; color: #111111 !important; }
@@ -829,6 +920,39 @@ with main_col:
 
     st.markdown("---")
     calculate = st.button("🔥 **Calculate Best Deals**", use_container_width=True, type="primary")
+    if calculate:
+        basket = sorted(st.session_state.get("selected_products", set()))
+        if not basket:
+            st.warning("Your basket is empty.")
+        else:
+            with st.spinner("Analyzing deals with AI..."):
+                results = []
+                for product in basket:
+                    if find_best_deal is not None:
+                        store, old_price, new_price, rating = find_best_deal(product, stores_data)
+                    else:
+                        store, data = get_cheapest_offer_for_product(product, stores_data, all_store_names)
+                        if not data:
+                            continue
+                        store, old_price, new_price, rating = store, data["old_price"], data["new_price"], data.get("rating", 4.5)
+                    if store:
+                        discount = (calculate_discount(old_price, new_price) if calculate_discount else
+                                    ((old_price - new_price) / old_price * 100) if old_price else 0)
+                        ai_score = calculate_ai_deal_score(old_price, new_price, rating) if calculate_ai_deal_score is not None else 0
+                        name = PRODUCT_DISPLAY_NAMES.get(product, product)
+                        insight = generate_ai_insight(name, round(discount, 1), rating) if generate_ai_insight else None
+                        results.append({
+                            "product": name,
+                            "store": store,
+                            "old_price": old_price,
+                            "price": new_price,
+                            "discount": round(discount, 1),
+                            "rating": rating,
+                            "score": ai_score,
+                            "insight": insight,
+                        })
+                st.session_state["best_deals_results"] = results
+            st.rerun()
 
 # Right panel: Super Deals (always visible; discount >= 40% and rating > 4)
 with right_col:
@@ -865,6 +989,90 @@ with right_col:
 # RESULTS: After "Calculate Best Deals" (uses deal_hunter: find_best_deal, check_super_deal, generate_marketing_slogan)
 # =============================================================================
 selected_list = sorted(st.session_state.selected_products)
+
+if "best_deals_results" in st.session_state:
+    st.markdown("---")
+    st.subheader("🔥 AI Best Deals")
+    best_deals = st.session_state["best_deals_results"]
+    n = len(best_deals)
+    cols = st.columns(n if n else 1)
+    for i, item in enumerate(best_deals):
+        with cols[i]:
+            store_label = get_store_badge(item["store"])
+            old_p = item.get("old_price")
+            if old_p is None and item.get("price") and item.get("discount"):
+                old_p = item["price"] / (1 - item["discount"] / 100) if item["discount"] < 100 else item["price"]
+            # Product card (result-product-card)
+            card_html = f"""
+<div class="result-product-card">
+    <span class="discount-badge">-{item["discount"]}%</span>
+    <h4 style="margin:0 0 8px 0;color:#111;">{html.escape(item["product"])}</h4>
+    <p style="margin:0 0 4px 0;font-size:13px;color:#666;">{html.escape(store_label)}</p>
+    {f'<p class="old" style="margin:0;">{old_p:.0f} AZN</p>' if old_p else ''}
+    <p class="new" style="margin:4px 0 8px 0;">{item["price"]} AZN</p>
+    <p style="margin:0;font-size:12px;color:#333;"><b>AI Deal Score:</b> {item["score"]}/100</p>
+</div>
+"""
+            _render_html(card_html)
+            st.markdown("<div style='margin-top:16px;'></div>", unsafe_allow_html=True)
+            # Price History title (separate from chart to prevent overlap)
+            st.markdown("### 📉 Price History")
+            # Cached history and prediction
+            history = cached_price_history(item["product"], item["price"])
+            predicted_price = _predict_next_price(history)
+            price_fig = build_price_history_chart_with_prediction(history, predicted_price)
+            # Layout: chart (left) | AI analysis (right)
+            chart_col, prediction_col = st.columns([3, 2])
+            with chart_col:
+                if price_fig is not None:
+                    st.plotly_chart(price_fig, use_container_width=True)
+                # Deal metrics (vertical, styled card)
+                st.markdown("#### 📊 Deal Metrics")
+                metrics_html = f"""
+<div style="
+    background:white;
+    padding:16px;
+    border-radius:10px;
+    border:1px solid #eee;
+    margin-top:12px;
+">
+    <div style="font-size:14px;margin-bottom:6px;"><b>Predicted Price:</b> {predicted_price:.2f} AZN</div>
+    <div style="font-size:14px;margin-bottom:6px;"><b>Current Discount:</b> {item['discount']:.1f}%</div>
+    <div style="font-size:14px;"><b>AI Deal Score:</b> {item['score']}/100</div>
+</div>
+"""
+                st.markdown(metrics_html, unsafe_allow_html=True)
+            with prediction_col:
+                # Cached AI analysis (one call per product)
+                history_key = _history_cache_key(history)
+                ai_analysis = cached_price_analysis(
+                    item["product"], item["price"], predicted_price,
+                    item["discount"], item["rating"], history_key,
+                )
+                if not ai_analysis:
+                    ai_analysis = _ui_fallback_insight(item["product"], item["discount"], item["rating"])
+                rec_html = f"""
+<div class="ai-recommendation-box">
+    <div class="ai-rec-title">🤖 AI Price Analysis</div>
+    {html.escape(ai_analysis)}
+</div>
+"""
+                _render_html(rec_html)
+    # Basket Summary
+    total_price = sum(item["price"] for item in best_deals)
+    total_original = sum(item.get("old_price", item["price"]) for item in best_deals)
+    total_savings = total_original - total_price
+    best_discount = max((item["discount"] for item in best_deals), default=0)
+    st.markdown("---")
+    st.subheader("📊 Basket Summary")
+    sum_col1, sum_col2, sum_col3 = st.columns(3)
+    with sum_col1:
+        st.metric("Total Basket Price", f"{total_price:.2f} AZN", None)
+    with sum_col2:
+        st.metric("Total Savings", f"{total_savings:.2f} AZN", f"vs {total_original:.2f} AZN")
+    with sum_col3:
+        st.metric("Best Discount", f"{best_discount:.1f}%", None)
+
 if calculate and selected_list:
     results = []
     total_price = 0

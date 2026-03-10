@@ -1,4 +1,3 @@
-import os
 import warnings
 warnings.filterwarnings("ignore")
 
@@ -9,14 +8,13 @@ from pydantic import BaseModel, ValidationError, ConfigDict
 
 
 # =========================================================
-# 1️⃣ DATA VALIDATION MODEL (Pydantic)
+# DATA VALIDATION MODEL (Pydantic)
 # ---------------------------------------------------------
 # Bu model stores.jsonl faylından oxunan datanı yoxlayır.
 # Əgər JSON daxilində səhv field olsa proqram crash etməsin.
 # =========================================================
 class ProductData(BaseModel):
     model_config = ConfigDict(extra='forbid')
-
     store: str
     product: str
     old_price: float
@@ -25,25 +23,22 @@ class ProductData(BaseModel):
 
 
 # =========================================================
-# 2️⃣ GEMINI AI CONFIGURATION
+# GEMINI AI CONFIGURATION
 # ---------------------------------------------------------
 # Set GEMINI_API_KEY in environment or .env (e.g. python-dotenv).
 # =========================================================
-API_KEY = os.getenv("GEMINI_API_KEY")
+API_KEY = "AIzaSyCtFRd1hWtlYJwhqZup4w15uLyqyDq4X0Q"
 
-if API_KEY:
-    genai.configure(api_key=API_KEY)
-    model = genai.GenerativeModel("gemini-2.5-pro")
-else:
-    model = None
+genai.configure(api_key=API_KEY)
 
+model = genai.GenerativeModel("gemini-2.5-pro")
 
 def _safe_generate(prompt):
     """
     Call Gemini and return stripped text, or None if missing/failed.
     Prevents fallback templates when AI response exists but is malformed.
     """
-    if model is None:
+    if model is None: #bu hisse AI modelin olub olmadigini yoxlayir
         return None
     try:
         response = model.generate_content(prompt)
@@ -55,7 +50,7 @@ def _safe_generate(prompt):
 
 
 # =========================================================
-# 3️⃣ DISCOUNT CALCULATION
+#  DISCOUNT CALCULATION
 # ---------------------------------------------------------
 # Məhsulun endirim faizini hesablayır.
 # =========================================================
@@ -67,7 +62,7 @@ def calculate_discount(old_price, new_price):
 
 
 # =========================================================
-# 4️⃣ AI MARKETING SLOGAN
+# AI MARKETING SLOGAN
 # ---------------------------------------------------------
 # AI istifadə edərək məhsul üçün marketing slogan yaradır.
 # Bu web app-də banner kimi istifadə olunur.
@@ -90,7 +85,7 @@ def generate_marketing_slogan(product, discount):
 
 
 # =========================================================
-# 5️⃣ STORE DATA LOADER
+# STORE DATA LOADER
 # ---------------------------------------------------------
 # JSONL faylından bütün mağaza datalarını oxuyur
 # və Python dictionary formatına çevirir.
@@ -98,11 +93,8 @@ def generate_marketing_slogan(product, discount):
 def load_store_data():
 
     stores_data = {}
-
     with open("data/stores.jsonl", encoding="utf-8") as file:
-
         for line in file:
-
             line = line.strip()
 
             if not line:
@@ -133,7 +125,7 @@ def load_store_data():
 
 
 # =========================================================
-# 6️⃣ FIND CHEAPEST STORE
+#  FIND CHEAPEST STORE
 # ---------------------------------------------------------
 # Müəyyən məhsul üçün ən ucuz mağazanı tapır.
 # =========================================================
@@ -162,7 +154,7 @@ def find_best_deal(product, stores_data):
 
 
 # =========================================================
-# 7️⃣ SUPER DEAL DETECTION
+# SUPER DEAL DETECTION
 # ---------------------------------------------------------
 # Əgər:
 # discount >= 40%
@@ -203,7 +195,7 @@ def check_super_deal(product, store, old_price, new_price, rating):
 
 
 # =========================================================
-# 7b️⃣ AI DEAL INSIGHT (for Streamlit UI)
+#  AI DEAL INSIGHT (for Streamlit UI)
 # ---------------------------------------------------------
 # Short explanation why the product is a good deal.
 # Returns None on failure; UI layer handles fallback.
@@ -224,7 +216,7 @@ def generate_ai_insight(product, discount, rating):
 
 
 # =========================================================
-# 8️⃣ PRICE HISTORY GENERATOR
+#  PRICE HISTORY GENERATOR
 # ---------------------------------------------------------
 # Demo məqsədilə məhsulun son 6 aylıq qiymət tarixçəsini
 # random şəkildə simulyasiya edir.
@@ -255,7 +247,46 @@ def generate_price_history(product, current_price):
 
 
 # =========================================================
-# 9️⃣ AI DEAL SCORE
+#  AI PRICE ANALYSIS (Gemini)
+# ---------------------------------------------------------
+# Analyzes history, predicted price, discount, rating;
+# returns natural language recommendation (no predefined templates).
+# =========================================================
+def generate_price_analysis(product, current_price, predicted_price, discount, rating, history_list):
+    """
+    Send price data to Gemini; AI explains whether to buy now or wait.
+    Based on price trend, predicted price, discount value, rating.
+    Returns None on failure.
+    """
+    history_str = "\n".join(f"  {h['month']}: {h['price']} AZN" for h in (history_list or []))
+    prompt = f"""You are an expert e-commerce pricing analyst.
+
+Analyze the following product deal and price history.
+
+Product: {product}
+Current price: {current_price} AZN
+Predicted next price: {predicted_price:.2f} AZN
+Discount: {discount}%
+Rating: {rating}
+
+Price history:
+{history_str}
+
+Explain in 2–3 sentences whether the user should buy now or wait.
+
+Base your reasoning on:
+- price trend
+- predicted price
+- discount value
+- rating
+
+Do not give generic advice.
+Give a professional analysis."""
+    return _safe_generate(prompt)
+
+
+# =========================================================
+#  AI DEAL SCORE
 # ---------------------------------------------------------
 # Məhsulun nə qədər yaxşı deal olduğunu qiymətləndirir.
 # Formula:
@@ -276,7 +307,7 @@ def calculate_ai_deal_score(old_price, new_price, rating):
 
 
 # =========================================================
-# 🔟 PRODUCT COMPARISON
+# PRODUCT COMPARISON
 # ---------------------------------------------------------
 # Bir neçə məhsulu müqayisə etmək üçün istifadə olunur.
 # =========================================================
